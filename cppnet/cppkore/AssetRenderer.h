@@ -81,6 +81,11 @@ namespace Assets
 		// Enable or disable material rendering
 		void SetShowMaterials(bool Value);
 
+		// Cycle skin index for skin preview
+		void RefreshSetSkin();
+
+		void SetDebugVersion(uint64_t Version);
+
 		// Changes the up axis
 		void SetZUpAxis(bool ZUp);
 
@@ -105,6 +110,17 @@ namespace Assets
 		// Internal buffer for texture mode
 		uint32_t _DrawTexture;
 
+		// Internal buffer for materials
+		List<Material> _MaterialList;
+		// Internal buffer for skins
+		List<List<int>> _MaterialSkinList;
+		// Internal buffer for skin material names
+		List<string> _MaterialSkinNameList;
+		// Internal buffer for submesh material indices
+		List<int32_t> _SubmeshMaterialIndices;
+		// Internal buffer for selected skin index
+		int32_t _SelectedSkinIndex;
+
 		// Internal bone point buffer
 		uint32_t _BonePointBuffer;
 		// Internal bone point count
@@ -119,11 +135,15 @@ namespace Assets
 			uint32_t Width;
 			uint32_t Height;
 
+			Vector2 Position;
+
 			int32_t Scale;
 
 			string AssetName;
 
 			uint32_t BoneCount;
+
+			uint64_t DebugVersion;
 		} _DrawInformation;
 
 		DrawMode _DrawingMode;

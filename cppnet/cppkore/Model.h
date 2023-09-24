@@ -44,6 +44,9 @@ namespace Assets
 		// A collection of 3D materials for this model.
 		List<Material> Materials;
 
+		List<List<int>> SkinMaterials;
+		List<string> SkinMaterialNames;
+
 		// Adds a material to the collection if it doesn't already exist, returning it's index.
 		template<typename T>
 		uint32_t AddMaterial(const string& MaterialName, const T& SourceMap = T())
@@ -64,6 +67,9 @@ namespace Assets
 
 			return Materials.Count() - 1;
 		}
+
+		void AddSkinMaterials(List<int>* materials) { SkinMaterials.EmplaceBack(*materials); };
+		void AddSkinMaterialNames(List<string>* materialNames) { SkinMaterialNames = *materialNames; };
 
 		// Calculates the total number of vertices that make up this model.
 		uint32_t VertexCount() const;

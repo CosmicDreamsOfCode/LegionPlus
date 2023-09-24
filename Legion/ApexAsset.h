@@ -6,6 +6,7 @@ enum class ApexAssetType
 {
 	Model,
 	AnimationSet,
+	AnimationSeq,
 	Image,
 	Material,
 	DataTable,
@@ -14,6 +15,12 @@ enum class ApexAssetType
 	ShaderSet,
 	UIImage,
 	UIImageAtlas,
+	Settings,
+	SettingsLayout,
+	RSON,
+	RUI,
+	Map,
+	Effect,
 };
 
 enum class ApexAssetStatus
@@ -34,6 +41,8 @@ struct ApexAsset
 	uint32_t Version;
 	string Info;
 	string DebugInfo = ""; // advanced info i suppose
+
+	uint64_t FileCreatedTime = 0;
 
 	ApexAsset();
 };

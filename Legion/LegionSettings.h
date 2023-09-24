@@ -39,6 +39,9 @@ private:
 	UIX::UIXLabel* label5;
 	UIX::UIXLabel* label6;
 	UIX::UIXLabel* label7;
+	UIX::UIXLabel* label8;
+	UIX::UIXLabel* labelVersion; // version
+	UIX::UIXLabel* labelAbout; // about
 	// Boxes
 	UIX::UIXGroupBox* groupBox1;
 	UIX::UIXGroupBox* groupBox2;
@@ -46,25 +49,32 @@ private:
 	UIX::UIXGroupBox* groupBox4;
 	UIX::UIXGroupBox* groupBox5;
 	// Load Types
-	UIX::UIXCheckBox* LoadMaterials;
+	UIX::UIXCheckBox* LoadModels;
 	UIX::UIXCheckBox* LoadImages;
+	UIX::UIXCheckBox* LoadMaterials;
+	UIX::UIXCheckBox* LoadShaderSets;
+	UIX::UIXCheckBox* LoadRSONs;
+	UIX::UIXCheckBox* LoadEffects;
+	UIX::UIXCheckBox* LoadAnimations;
+	UIX::UIXCheckBox* LoadAnimationSeqs;
 	UIX::UIXCheckBox* LoadUIImages;
 	UIX::UIXCheckBox* LoadDataTables;
-	UIX::UIXCheckBox* LoadShaderSets;
-	UIX::UIXCheckBox* LoadAnimations;
-	UIX::UIXCheckBox* LoadModels;
+	UIX::UIXCheckBox* LoadSettingsSets;
 	// Toggles
 	UIX::UIXCheckBox* ToggleOverwriting;
 	UIX::UIXCheckBox* ToggleAudioLanguageFolders;
 	UIX::UIXCheckBox* ToggleUseFullPaths;
 	UIX::UIXCheckBox* ToggleUseTxtrGuids;
+	UIX::UIXCheckBox* ToggleSkinExport;
 	// Export Types
 	UIX::UIXComboBox* ModelExportFormat;
 	UIX::UIXComboBox* AnimExportFormat;
 	UIX::UIXComboBox* ImageExportFormat;
 	UIX::UIXComboBox* TextExportFormat;
-	UIX::UIXComboBox* NormalRecalcType;
 	UIX::UIXComboBox* AudioLanguage;
+	UIX::UIXComboBox* NormalRecalcType;
+	UIX::UIXComboBox* MatCPUExportFormat;
+	UIX::UIXComboBox* AudioExportFormat;
 	// Export Formats
 	UIX::UIXRadioButton* ExportCastAnim;
 	UIX::UIXRadioButton* ExportSEAnim;

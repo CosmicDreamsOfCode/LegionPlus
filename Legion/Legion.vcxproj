@@ -79,7 +79,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(SolutionDir)cppnet\cppkore;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)cppnet\cppkore;$(IncludePath);$(ProjectDir)</IncludePath>
     <LibraryPath>$(SolutionDir)bin\x64\Debug;$(SolutionDir)cppnet\cppkore_libs;$(LibraryPath)</LibraryPath>
     <IntDir>$(SolutionDir)build\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
     <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
@@ -87,7 +87,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(SolutionDir)cppnet\cppkore;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)cppnet\cppkore;$(ProjectDir);$(IncludePath)</IncludePath>
     <LibraryPath>$(SolutionDir)bin\x64\Release;$(SolutionDir)cppnet\cppkore_libs;$(LibraryPath)</LibraryPath>
     <IntDir>$(SolutionDir)build\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
     <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
@@ -143,7 +143,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(PropertyPreprocessorDefinitions);NDEBUG;_CONSOLE;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -159,37 +159,53 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ApexAsset.cpp" />
-    <ClCompile Include="CommandLine.cpp" />
-    <ClCompile Include="ExportManager.cpp" />
-    <ClCompile Include="LegionMain.cpp" />
-    <ClCompile Include="LegionPreview.cpp" />
-    <ClCompile Include="LegionProgress.cpp" />
-    <ClCompile Include="LegionSettings.cpp" />
-    <ClCompile Include="LegionSplash.cpp" />
-    <ClCompile Include="LegionTablePreview.cpp" />
-    <ClCompile Include="LegionTitanfallConverter.cpp" />
-    <ClCompile Include="Logger.cpp" />
-    <ClCompile Include="Main.cpp" />
-    <ClCompile Include="MilesLib.cpp" />
-    <ClCompile Include="pch.cpp">
+    <ClCompile Include="src\ApexAsset.cpp" />
+    <ClCompile Include="src\Assets\animation.cpp" />
+    <ClCompile Include="src\Assets\datatable.cpp" />
+    <ClCompile Include="src\Assets\effect.cpp" />
+    <ClCompile Include="src\Assets\material.cpp" />
+    <ClCompile Include="src\Assets\model.cpp" />
+    <ClCompile Include="src\Assets\qc.cpp" />
+    <ClCompile Include="src\Assets\rmap.cpp" />
+    <ClCompile Include="src\assets\rson.cpp" />
+    <ClCompile Include="src\Assets\rui.cpp" />
+    <ClCompile Include="src\assets\settings.cpp" />
+    <ClCompile Include="src\Assets\shader.cpp" />
+    <ClCompile Include="src\Assets\subtitles.cpp" />
+    <ClCompile Include="src\Assets\texture.cpp" />
+    <ClCompile Include="src\Assets\uiia.cpp" />
+    <ClCompile Include="src\Assets\uimg.cpp" />
+    <ClCompile Include="src\bsplib\games\bsp_apexlegends.cpp" />
+    <ClCompile Include="src\bsplib\games\bsp_titanfall2.cpp" />
+    <ClCompile Include="src\CommandLine.cpp" />
+    <ClCompile Include="src\ExportManager.cpp" />
+    <ClCompile Include="src\LegionMain.cpp" />
+    <ClCompile Include="src\LegionPreview.cpp" />
+    <ClCompile Include="src\LegionProgress.cpp" />
+    <ClCompile Include="src\LegionSettings.cpp" />
+    <ClCompile Include="src\LegionSplash.cpp" />
+    <ClCompile Include="src\LegionTablePreview.cpp" />
+    <ClCompile Include="src\LegionTitanfallConverter.cpp" />
+    <ClCompile Include="src\Logger.cpp" />
+    <ClCompile Include="src\Main.cpp" />
+    <ClCompile Include="src\MdlLib.cpp" />
+    <ClCompile Include="src\MilesLib.cpp" />
+    <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="RBspLib.cpp" />
-    <ClCompile Include="RpakAssetBuildInfo.cpp" />
-    <ClCompile Include="RpakAssetExport.cpp" />
-    <ClCompile Include="RpakAssetExtract.cpp" />
-    <ClCompile Include="RpakAssetPreview.cpp" />
-    <ClCompile Include="RpakLib.cpp" />
-    <ClCompile Include="rtech.cpp" />
-    <ClCompile Include="MdlLib.cpp" />
-    <ClCompile Include="Utils.cpp" />
-    <ClCompile Include="VpkLib.cpp" />
+    <ClCompile Include="src\bsplib.cpp" />
+    <ClCompile Include="src\RpakAssetPreview.cpp" />
+    <ClCompile Include="src\RpakLib.cpp" />
+    <ClCompile Include="src\rtech.cpp" />
+    <ClCompile Include="src\Utils.cpp" />
+    <ClCompile Include="src\VpkLib.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="animtypes.h" />
     <ClInclude Include="ApexAsset.h" />
     <ClInclude Include="basetypes.h" />
+    <ClInclude Include="bsplib.h" />
     <ClInclude Include="CommandLine.h" />
     <ClInclude Include="ExportAsset.h" />
     <ClInclude Include="ExportManager.h" />
@@ -203,14 +219,15 @@
     <ClInclude Include="Logger.h" />
     <ClInclude Include="MilesLib.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="RBspLib.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="rmdlstructs.h" />
     <ClInclude Include="RpakAssets.h" />
     <ClInclude Include="RpakImageTiles.h" />
     <ClInclude Include="RpakLib.h" />
     <ClInclude Include="rtech.h" />
     <ClInclude Include="MdlLib.h" />
     <ClInclude Include="Utils.h" />
+    <ClInclude Include="version.h" />
     <ClInclude Include="VpkLib.h" />
   </ItemGroup>
   <ItemGroup>
@@ -223,7 +240,7 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\Resources\LegionIcon.ico" />
-    <Image Include="..\Resources\SplashImage.png" />
+    <Image Include="..\Resources\SplashImage.jpg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

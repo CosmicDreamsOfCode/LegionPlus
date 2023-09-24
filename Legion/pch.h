@@ -30,7 +30,10 @@
 #include <iomanip>
 #include <cassert>
 #include <filesystem>
+#include <array>
 
 #include "ExportManager.h"
 #include "Utils.h"
 #include "Logger.h"
+
+typedef unsigned short uint16;

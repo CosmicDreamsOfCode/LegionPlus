@@ -15,7 +15,7 @@
 namespace Assets
 {
 	AssetRenderer::AssetRenderer()
-		: OpenGLViewport(), _Camera(0.5f* (float)MathHelper::PI, 0.45f* (float)MathHelper::PI, 100.f), _UseWireframe(false), _ShowBones(true), _ShowMaterials(true), _DrawingMode(DrawMode::Model), _DrawInformation{}, _BonePointBuffer(0), _BonePointCount(0), _DrawTexture(0)
+		: OpenGLViewport(), _Camera(0.5f* (float)MathHelper::PI, 0.45f* (float)MathHelper::PI, 100.f), _UseWireframe(false), _ShowBones(true), _ShowMaterials(true), _DrawingMode(DrawMode::Model), _DrawInformation{}, _BonePointBuffer(0), _BonePointCount(0), _DrawTexture(0), _SelectedSkinIndex(0)
 	{
 	}
 
@@ -30,6 +30,11 @@ namespace Assets
 		this->_DrawingMode = DrawMode::Model;
 		ClearViewModel();
 		ClearViewTexture();
+
+		// huh
+		this->_MaterialList = Model.Materials;
+		this->_MaterialSkinList = Model.SkinMaterials;
+		this->_MaterialSkinNameList = Model.SkinMaterialNames;
 
 		for (auto& Submesh : Model.Meshes)
 		{
@@ -64,7 +69,9 @@ namespace Assets
 
 			if (Submesh.MaterialIndices.Count() > 0 && this->_MaterialStreamer != nullptr && Model.Materials.Count() != 0)
 			{
-				auto& Material = Model.Materials[Submesh.MaterialIndices[0]];
+				this->_SubmeshMaterialIndices.EmplaceBack(Submesh.MaterialIndices[0]);
+
+				Assets::Material& Material = Model.Materials[Submesh.MaterialIndices[0]];
 
 				if (Material.Slots.ContainsKey(MaterialSlotType::Albedo))
 				{
@@ -83,7 +90,6 @@ namespace Assets
 					{
 						glGenTextures(1, &Draw.Material.NormalMap);
 						this->LoadDXTextureOGL(*MaterialNormalMap.get(), Draw.Material.NormalMap);
-
 					}
 				}
 
@@ -94,7 +100,6 @@ namespace Assets
 					{
 						glGenTextures(1, &Draw.Material.RoughnessMap);
 						this->LoadDXTextureOGL(*MaterialGlossMap.get(), Draw.Material.RoughnessMap);
-
 					}
 				}
 
@@ -105,7 +110,6 @@ namespace Assets
 					{
 						glGenTextures(1, &Draw.Material.MetallicMap);
 						this->LoadDXTextureOGL(*MaterialSpecMap.get(), Draw.Material.MetallicMap);
-
 					}
 				}
 
@@ -172,6 +176,12 @@ namespace Assets
 		glDeleteBuffers(1, &this->_BonePointBuffer);
 		this->_BonePointBuffer = 0;
 		this->_BonePointCount = 0;
+		this->_SelectedSkinIndex = 0;
+		// huh2
+		this->_MaterialList.Clear();
+		this->_MaterialSkinList.Clear();
+		this->_MaterialSkinNameList.Clear();
+		this->_SubmeshMaterialIndices.Clear();
 
 		_DrawObjects.Clear();
 		_DrawInformation = {};
@@ -199,6 +209,12 @@ namespace Assets
 		// Determine best fit scale to fit the image
 		float Scale = min((float)this->_ClientWidth / (float)Texture.Width(), (float)this->_ClientHeight / (float)Texture.Height());
 		this->_DrawInformation.Scale = min(100, (int)(Scale * 100));
+
+		float ImageWidth = this->_DrawInformation.Width * (float)this->_DrawInformation.Scale / 100.f;
+		float ImageHeight = this->_DrawInformation.Height * (float)this->_DrawInformation.Scale / 100.f;
+
+		this->_DrawInformation.Position.X = (this->_ClientWidth - (float)ImageWidth) / 2.0f;
+		this->_DrawInformation.Position.Y = (this->_ClientHeight - (float)ImageHeight) / 2.0f;
 	}
 
 	void AssetRenderer::ClearViewTexture()
@@ -232,6 +248,61 @@ namespace Assets
 			this->_ShowMaterials = Value;
 			this->Redraw();
 		}
+	}
+
+	void AssetRenderer::RefreshSetSkin()
+	{
+		for (int i = 0; i < this->_DrawObjects.Count(); i++)
+		{
+			if (this->_SubmeshMaterialIndices[i] == -1) // TODO: matIdx is -1 if other UV layer is used
+				continue;
+
+			Assets::Material& Material = this->_MaterialList[this->_MaterialSkinList[this->_SelectedSkinIndex][this->_SubmeshMaterialIndices[i]]];
+
+			if (Material.Slots.ContainsKey(MaterialSlotType::Albedo))
+			{
+				auto MaterialDiffuseMap = this->_MaterialStreamer("", Material.Slots[MaterialSlotType::Albedo].second);
+				if (MaterialDiffuseMap != nullptr)
+				{
+					this->LoadDXTextureOGL(*MaterialDiffuseMap.get(), this->_DrawObjects[i].Material.AlbedoMap);
+				}
+			}
+
+			if (Material.Slots.ContainsKey(MaterialSlotType::Normal))
+			{
+				auto MaterialNormalMap = this->_MaterialStreamer("", Material.Slots[MaterialSlotType::Normal].second);
+				if (MaterialNormalMap != nullptr)
+				{
+					this->LoadDXTextureOGL(*MaterialNormalMap.get(), this->_DrawObjects[i].Material.NormalMap);
+				}
+			}
+
+			if (Material.Slots.ContainsKey(MaterialSlotType::Gloss))
+			{
+				auto MaterialGlossMap = this->_MaterialStreamer("", Material.Slots[MaterialSlotType::Gloss].second);
+				if (MaterialGlossMap != nullptr)
+				{
+					this->LoadDXTextureOGL(*MaterialGlossMap.get(), this->_DrawObjects[i].Material.RoughnessMap);
+				}
+			}
+
+			if (Material.Slots.ContainsKey(MaterialSlotType::Specular))
+			{
+				auto MaterialSpecMap = this->_MaterialStreamer("", Material.Slots[MaterialSlotType::Specular].second);
+				if (MaterialSpecMap != nullptr)
+				{
+					this->LoadDXTextureOGL(*MaterialSpecMap.get(), this->_DrawObjects[i].Material.MetallicMap);
+				}
+			}
+		}
+		
+		this->Redraw();
+	}
+
+	void AssetRenderer::SetDebugVersion(uint64_t Version)
+	{
+		this->_DrawInformation.DebugVersion = Version;
+		this->Redraw();
 	}
 
 	void AssetRenderer::SetZUpAxis(bool ZUp)
@@ -321,17 +392,36 @@ namespace Assets
 
 	void AssetRenderer::OnKeyUp(const std::unique_ptr<Forms::KeyEventArgs>& EventArgs)
 	{
-		if (EventArgs->KeyCode() == Forms::Keys::W)
+		auto Key = EventArgs->KeyCode();
+
+		switch (Key)
 		{
+		case Forms::Keys::W:
 			this->SetUseWireframe(!this->_UseWireframe);
-		}
-		else if (EventArgs->KeyCode() == Forms::Keys::B)
-		{
+			break;
+		case Forms::Keys::B:
 			this->SetShowBones(!this->_ShowBones);
-		}
-		else if (EventArgs->KeyCode() == Forms::Keys::T)
-		{
+			break;
+		case Forms::Keys::T:
 			this->SetShowMaterials(!this->_ShowMaterials);
+			break;
+		case Forms::Keys::S:
+		case Forms::Keys::D:
+			if (_MaterialSkinList.Count() > 1)
+			{
+				if (Key == Forms::Keys::S)
+				{
+					if (--_SelectedSkinIndex < 0)
+						_SelectedSkinIndex = _MaterialSkinList.Count() - 1;
+				}
+				else
+				{
+					if (++_SelectedSkinIndex >= _MaterialSkinList.Count())
+						_SelectedSkinIndex = 0;
+				}
+				this->RefreshSetSkin();
+			}
+			break;
 		}
 
 		OpenGLViewport::OnKeyUp(EventArgs);
@@ -359,6 +449,9 @@ namespace Assets
 		{
 			float dx = ((float)(this->_TargetMousePosition.X - EventArgs->X));
 			float dy = ((float)(this->_TargetMousePosition.Y - EventArgs->Y));
+
+			this->_DrawInformation.Position.X += dx * .5f;
+			this->_DrawInformation.Position.Y += dy * .5f;
 
 			this->_Camera.Pan(dx * .1f, dy * .1f);
 			this->Redraw();
@@ -579,17 +672,15 @@ namespace Assets
 		glLoadIdentity();
 
 		glColor3f(1.0f, 1.0f, 1.0f);
-		glDisable(GL_BLEND);
+		glEnable(GL_BLEND);
 
 		float Scale = (float)this->_DrawInformation.Scale / 100.f;
 
-		float ImageWidth = this->_DrawInformation.Width * Scale;
-		float ImageHeight = this->_DrawInformation.Height * Scale;
+		float Width = this->_DrawInformation.Width * ((float)this->_DrawInformation.Scale / 100.f);
+		float Height = this->_DrawInformation.Height * ((float)this->_DrawInformation.Scale / 100.f);
 
-		float Width = (ImageWidth);
-		float Height = (ImageHeight);
-		float X = (this->_ClientWidth - (float)Width) / 2.0f;
-		float Y = (this->_ClientHeight - (float)Height) / 2.0f;
+		float X = this->_DrawInformation.Position.X;
+		float Y = this->_DrawInformation.Position.Y;
 
 		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, this->_DrawTexture);
@@ -626,10 +717,13 @@ namespace Assets
 			_RenderFont.RenderString("Verts", 22, 54, FontScale); _RenderFont.RenderString(":", 80, 54, FontScale);
 			_RenderFont.RenderString("Tris", 22, 70, FontScale); _RenderFont.RenderString(":", 80, 70, FontScale);
 			_RenderFont.RenderString("Bones", 22, 86, FontScale); _RenderFont.RenderString(":", 80, 86, FontScale);
+			_RenderFont.RenderString("Version", 22, 102, FontScale); _RenderFont.RenderString(":", 80, 102, FontScale);
+			_RenderFont.RenderString("Skin", 22, 118, FontScale); _RenderFont.RenderString(":", 80, 118, FontScale);
+
 
 			glColor4f(35 / 255.f, 206 / 255.f, 107 / 255.f, 1);
 
-			_RenderFont.RenderString(string((this->_ShowBones) ? "Hide Bones (b), " : "Draw Bones (b), ") + string((this->_ShowMaterials) ? "Shaded View (t), " : "Material View (t), ") + string((this->_UseWireframe) ? "Hide Wireframe (w)" : "Draw Wireframe (w)"), 22, this->_Height - 44.f, FontScale);
+			_RenderFont.RenderString(string((this->_ShowBones) ? "Hide Bones (b), " : "Draw Bones (b), ") + string((this->_ShowMaterials) ? "Shaded View (t), " : "Material View (t), ") + string((this->_UseWireframe) ? "Hide Wireframe (w)" : "Draw Wireframe (w)") + string((this->_MaterialSkinList.Count() > 1) ? ", Cycle Skin (s, d)" : ""), 22, this->_Height - 44.f, FontScale);
 
 			glColor4f(0.9f, 0.9f, 0.9f, 1);
 
@@ -638,6 +732,10 @@ namespace Assets
 			_RenderFont.RenderString(string::Format("%d", this->_DrawInformation.VertexCount), 96, 54, FontScale);
 			_RenderFont.RenderString(string::Format("%d", this->_DrawInformation.TriangleCount), 96, 70, FontScale);
 			_RenderFont.RenderString(string::Format("%d", this->_DrawInformation.BoneCount), 96, 86, FontScale);
+			_RenderFont.RenderString(string::Format("%llx", this->_DrawInformation.DebugVersion), 96, 102, FontScale);
+
+			if (this->_MaterialSkinList.Count() > 0)
+				_RenderFont.RenderString(string::Format("%d/%d ", this->_SelectedSkinIndex + 1, this->_MaterialSkinList.Count()) + this->_MaterialSkinNameList[this->_SelectedSkinIndex], 96, 118, FontScale);
 			break;
 		case DrawMode::Texture:
 			glColor4f(3 / 255.f, 169 / 255.f, 244 / 255.f, 1);
@@ -646,6 +744,7 @@ namespace Assets
 			_RenderFont.RenderString("Width", 22, 38, FontScale); _RenderFont.RenderString(":", 80, 38, FontScale);
 			_RenderFont.RenderString("Height", 22, 54, FontScale); _RenderFont.RenderString(":", 80, 54, FontScale);
 			_RenderFont.RenderString("Scale", 22, 70, FontScale); _RenderFont.RenderString(":", 80, 70, FontScale);
+			_RenderFont.RenderString("Version", 22, 86, FontScale); _RenderFont.RenderString(":", 80, 86, FontScale);
 
 			glColor4f(0.9f, 0.9f, 0.9f, 1);
 
@@ -653,6 +752,7 @@ namespace Assets
 			_RenderFont.RenderString(string::Format("%d", this->_DrawInformation.Width), 96, 38, FontScale);
 			_RenderFont.RenderString(string::Format("%d", this->_DrawInformation.Height), 96, 54, FontScale);
 			_RenderFont.RenderString(string::Format("%d%%", this->_DrawInformation.Scale), 96, 70, FontScale);
+			_RenderFont.RenderString(string::Format("%llx", this->_DrawInformation.DebugVersion), 96, 86, FontScale);
 			break;
 		}
 	}
@@ -670,6 +770,8 @@ namespace Assets
 		{
 		case DXGI_FORMAT::DXGI_FORMAT_BC6H_UF16:
 			Texture.ConvertToFormat(DXGI_FORMAT_BC1_UNORM);
+
+			[[fallthrough]];
 		case DXGI_FORMAT::DXGI_FORMAT_BC1_UNORM:
 		case DXGI_FORMAT::DXGI_FORMAT_BC1_UNORM_SRGB:
 			glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, Texture.Width(), Texture.Height(), 0, Texture.BlockSize(), Texture.GetPixels());

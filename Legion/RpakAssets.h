@@ -6,10 +6,19 @@
 #include "ListBase.h"
 #include <d3dcommon.h>
 #include "Utils.h"
+#include <animtypes.h>
 
 // Game structures
 // APEX
 #pragma pack(push, 1)
+union RPakPtr
+{
+	struct {
+		uint32_t Index;
+		uint32_t Offset;
+	};
+	uint64_t Value;
+};
 
 enum class CompressionType : uint8_t
 {
@@ -19,48 +28,86 @@ enum class CompressionType : uint8_t
 	OODLE = 0x3
 };
 
-struct TextureHeader
+struct TextureHeaderV8
 {
-	uint64_t NameHash;
-	uint32_t NameIndex;
-	uint32_t NameOffset;
+	uint64_t guid;
+	RPakPtr name;
 
-	uint16_t Width;
-	uint16_t Height;
+	uint16_t width;
+	uint16_t height;
+	uint16_t depth;
 
-	uint8_t Un1;
-	uint8_t Un2;
-	uint8_t Format;				  // used as an index into an array of DXGI formats
-	uint8_t Un3;
+	uint16_t imageFormat;  // Maps to a DXGI format
+	uint32_t dataSize;	// This is the total amount of image data across all banks
 
-	uint32_t DataSize;	          // total data size across all mips
-	uint8_t Unknown2;
-	uint8_t MipLevelsStreamedOpt; // mips stored in .opt.starpak
-	uint8_t ArraySize;
-	uint8_t LayerCount;
-	uint8_t Unknown4;
-	uint8_t MipLevelsPermanent;   // mips stored in .rpak
-	uint8_t MipLevelsStreamed;    // mips stored in .starpak
+	uint8_t unk; // 8 PS4, 9 Switch
+	uint8_t optStreamedMipCount; // r5 only
 
-	uint8_t UnknownPad[0x15];
+	uint8_t arraySize;
+	uint8_t layerCount;
+
+	uint8_t unkMip; // 0x1 inverted, 0x2 ???
+	uint8_t permanentMipCount;
+	uint8_t streamedMipCount;
+
+	byte unk1[13]; // mipmap related, used bytes is always total mip count minus one, not present if no mipmaps (see mip count - 1)
+
+	uint64_t numPixels; // reserved, set on load.
 };
 
 struct TextureHeaderV9
 {
-	uint32_t NameIndex;
-	uint32_t NameOffset;
-	uint16_t Format;
-	uint16_t Width;
-	uint16_t Height;
-	uint16_t Un1;
-	uint8_t ArraySize;
+	RPakPtr name;
+
+	uint16_t imageFormat;
+	uint16_t width;
+	uint16_t height;
+	uint16_t depth;
+
+	uint8_t arraySize;
+
 	uint8_t byte11;
 	uint8_t gap12;
 	uint8_t char13;
-	uint32_t DataSize;
-	uint8_t MipLevels;
-	uint8_t MipLevelsStreamed;
-	uint8_t MipLevelsStreamedOpt;
+
+	uint32_t dataSize;
+	uint8_t permanentMipCount;
+	uint8_t streamedMipCount;
+	uint8_t optStreamedMipCount;
+};
+
+struct TextureHeader
+{
+	RPakPtr name;
+	uint16_t width;
+	uint16_t height;
+	uint16_t imageFormat;  // Maps to a DXGI format
+	uint32_t dataSize;	// This is the total amount of image data across all banks
+	uint8_t unk; // 8 PS4, 9 Switch
+	uint8_t optStreamedMipCount; // r5 only
+
+	uint8_t arraySize;
+	uint8_t unkMip; // 0x1 inverted, 0x2 ???
+	uint8_t permanentMipCount;
+	uint8_t streamedMipCount;
+
+	void ReadFromAssetStream(std::unique_ptr<IO::MemoryStream>* RpakStream, int assetVersion)
+	{
+		IO::BinaryReader Reader = IO::BinaryReader(RpakStream->get(), true);
+		
+		if (assetVersion >= 9)
+		{
+			TextureHeaderV9 txtrHdr = Reader.Read<TextureHeaderV9>();
+			width = txtrHdr.width;
+			height = txtrHdr.height;
+		}
+		else
+		{
+			TextureHeaderV8 txtrHdr = Reader.Read<TextureHeaderV8>();
+			width = txtrHdr.width;
+			height = txtrHdr.height;
+		}
+	}
 };
 
 // --- txan ---
@@ -122,7 +169,10 @@ struct RUIImage
 	uint32_t BufferIndex;
 	uint32_t BufferOffset;
 
-	uint32_t Zero2[0x4];
+	uint32_t NameIndex;
+	uint32_t NameOffset;
+
+	uint32_t Zero2[0x2];
 };
 
 // --- dtbl ---
@@ -147,7 +197,7 @@ struct DataTableHeader
 	uint32_t RowHeaderBlock;
 	uint32_t RowHeaderOffset;
 	uint32_t UnkHash;
-	
+
 	uint16_t Un1;
 	uint16_t Un2;
 
@@ -190,26 +240,44 @@ struct SubtitleEntry
 	string SubtitleText;
 };
 
+// settings structs are only tested on season 3 for now
+enum class SettingsFieldType : uint16_t
+{
+	ST_Bool,
+	ST_Int,
+	ST_Float,
+	ST_Float2,
+	ST_Float3,
+	ST_String,
+	ST_Asset,
+	ST_Asset_2,
+	ST_Array,
+	ST_Array_2,
+};
+
 // --- stgs ---
 struct SettingsHeader
 {
-	uint64_t Hash;
-	
-	uint32_t KvpIndex;
-	uint32_t KvpOffset;
+	uint64_t LayoutGUID;
 
-	uint32_t NameIndex;
-	uint32_t NameOffset;
+	RPakPtr Values;
 
-	uint32_t StringBufferIndex;
-	uint32_t StringBufferOffset;
+	RPakPtr Name;
 
-	uint8_t Unk1[0x18];
+	RPakPtr StringBuf;
+
+	uint64_t Unk1;
+
+	RPakPtr ModNames;
+
+	RPakPtr Unk2;
 
 	uint32_t KvpBufferSize;
 
-	uint8_t Unk2[0xC];
+	uint64_t Unk3;
+	uint32_t Unk4;
 };
+ASSERT_SIZE(SettingsHeader, 0x48);
 
 struct SettingsKeyValue
 {
@@ -221,6 +289,37 @@ struct SettingsKeyValuePair
 {
 	SettingsKeyValue Key;
 	SettingsKeyValue Value;
+};
+
+struct SettingsLayoutHeader
+{
+	RPakPtr pName;
+	RPakPtr pItems;
+	RPakPtr unk2;
+	uint32_t unk3;
+	uint32_t itemsCount;
+	uint32_t unk4;
+	uint32_t unk5;
+	uint32_t unk6;
+	uint32_t unk7;
+	uint32_t unk8;
+	uint32_t unk9;
+	RPakPtr pStringBuf;
+	RPakPtr unk11;
+};
+
+struct SettingsLayoutItem
+{
+	SettingsFieldType type = SettingsFieldType::ST_String;
+	string name;
+	uint32_t valueOffset; // offset from start of stgs value buffer
+};
+
+struct SettingsLayout
+{
+	string name;
+	unsigned int itemsCount;
+	List<SettingsLayoutItem> items;
 };
 
 // --- Ptch ---
@@ -238,1002 +337,840 @@ struct PatchHeader
 
 // ANIMATIONS
 // --- aseq ---
-struct AnimHeader
+struct ASeqHeader
 {
-	uint32_t AnimationIndex;
-	uint32_t AnimationOffset;
+	RPakPtr pAnimation;
+	RPakPtr pName;
 
-	uint32_t NameIndex;
-	uint32_t NameOffset;
+	RPakPtr pModels;
+	uint32_t ModelCount;
+	uint32_t Reserved;
 
-	uint8_t Unknown[0x18];
+	RPakPtr pSettings;
+	uint32_t SettingCount;
+	uint32_t Reserved1;
+};
 
-	uint32_t ModelHashIndex;
-	uint32_t ModelHashOffset;
+struct ASeqHeaderV71
+{
+	RPakPtr pAnimation;
+	RPakPtr pName;
+
+	RPakPtr pModels;
+	uint32_t ModelCount;
+
+	uint32_t externalDataSize;
+
+	// this can point to a group of guids and not one singular one.
+	RPakPtr pSettings;
+	uint32_t SettingCount;
+	uint32_t Reserved1;
+
+	// pointer to data stored outside of the raw rseq.
+	RPakPtr pExternalData;
+};
+
+struct ASeqHeaderV10
+{
+	RPakPtr pAnimation;
+	RPakPtr pName;
+
+	uint64_t Unknown; // possible pointer, guid, or reserved space.
+
+	// counts for mdl_ and stgs assets, normally just one but can be multiples.
+	uint32_t ModelCount;
+	uint32_t SettingCount;
+
+	// size of the external data.
+	uint32_t externalDataSize;
+
+	// these can all point to a group of guids and not one singular one.
+	RPakPtr pModels;
+	RPakPtr pEffects;
+	RPakPtr pSettings;
+
+	// data that is stored outside of the raw rseq.
+	RPakPtr pExternalData;
 };
 
 // --- arig ---
+struct AnimRigHeaderV5
+{
+	RPakPtr studioData;
+	RPakPtr name;
+
+	short unk1;
+
+	short animSeqCount;
+
+	int unk1_v6;
+
+	RPakPtr animSeqs;
+
+	__int64 unk2;
+};
+
 struct AnimRigHeader
 {
-	uint32_t SkeletonIndex;
-	uint32_t SkeletonOffset;
+	RPakPtr studioData;
 
-	uint32_t NameIndex;
-	uint32_t NameOffset;
+	RPakPtr name;
 
-	uint32_t Unk1;
-	uint32_t AnimationReferenceCount;
+	DWORD unk1;
+	int animSeqCount;
 
-	uint32_t AnimationReferenceIndex;
-	uint32_t AnimationReferenceOffset;
+	int unk1_v6;
 
-	uint32_t Unk3;
-	uint32_t Unk4;
-};
+	RPakPtr animSeqs;
 
-struct RAnimHeader
-{
-	uint32_t Zero;
-	uint32_t NameOffset;
-	uint32_t SourceOffset;
-	uint32_t Flags;
+	__int64 unk2;
 
-	uint64_t Unknown;
 
-	uint32_t NotetrackCount;
-	uint32_t NotetrackOffset;
-
-	float Mins[3];
-	float Maxs[3];
-
-	uint32_t AnimationCount;
-	uint32_t AnimationOffset;
-};
-
-struct RAnimTitanfallHeader
-{
-	uint32_t Zero;
-	uint32_t NameOffset;
-
-	float Framerate;
-
-	uint32_t Flags;
-	uint32_t FrameCount;
-
-	uint32_t Zero1;
-	uint32_t Zero2;
-
-	uint32_t UnknownOffset;
-	uint32_t FirstChunkOffset;
-
-	uint32_t UnknownCount2;
-	uint32_t UnknownOffset2;
-
-	uint32_t Zero3;
-	uint32_t Zero4;
-
-	uint32_t OffsetToChunkOffsetsTable;
-	uint32_t FrameSplitCount;
-
-	uint8_t UnknownZero[0x20];
-};
-
-struct RAnimSequenceHeader
-{
-	uint32_t Zero;
-	uint32_t NameOffset;
-
-	float Framerate;
-
-	uint32_t Flags;
-	uint32_t FrameCount;
-
-	uint64_t UnknownZero;
-
-	uint32_t FloatTableOffset;
-	uint32_t FirstChunkOffset;
-	uint32_t Flags2;
-	uint32_t UnknownTableOffset;
-	uint32_t OffsetToChunkOffsetsTable;
-	uint32_t FrameSplitCount;
-	uint32_t FrameMedianCount;
-	uint64_t Padding;
-	uint64_t SomeDataOffset;
-};
-
-struct RAnimBoneFlag
-{
-	uint16_t Size : 12;
-	uint16_t bAdditiveCustom : 1;
-	uint16_t bDynamicScale : 1;			// If zero, one per data set
-	uint16_t bDynamicRotation : 1;		// If zero, one per data set
-	uint16_t bDynamicTranslation : 1;	// If zero, one per data set
-};
-
-struct RAnimTitanfallBoneFlag
-{
-	uint8_t Unused : 1;
-	uint8_t bStaticTranslation : 1;		// If zero, one per data set
-	uint8_t bStaticRotation : 1;		// If zero, one per data set
-	uint8_t bStaticScale : 1;			// If zero, one per data set
-	uint8_t Unused2 : 1;
-	uint8_t Unused3 : 1;
-	uint8_t Unused4 : 1;
-};
-
-struct RAnimBoneHeader
-{
-	float TranslationScale;
-
-	uint8_t BoneIndex;
-	RAnimTitanfallBoneFlag BoneFlags;
-	uint8_t Flags2;
-	uint8_t Flags3;
-	
-	union
+	void ReadFromAssetStream(std::unique_ptr<IO::MemoryStream>* RpakStream, int assetVersion)
 	{
-		struct
+		IO::BinaryReader Reader = IO::BinaryReader(RpakStream->get(), true);
+
+		studioData = Reader.Read<RPakPtr>();
+		name = Reader.Read<RPakPtr>();
+
+		if (assetVersion < 5)
 		{
-			uint16_t OffsetX;
-			uint16_t OffsetY;
-			uint16_t OffsetZ;
-			uint16_t OffsetL;
-		};
+			unk1 = Reader.Read<DWORD>();
+			animSeqCount = Reader.Read<int>();
+			unk1_v6 = 0;
+		}
+		else {
+			unk1 = Reader.Read<short>();
+			animSeqCount = Reader.Read<short>();
+			unk1_v6 = Reader.Read<int>();
+		}
 
-		uint64_t PackedRotation;
-	} RotationInfo;
-
-	uint16_t TranslationX;
-	uint16_t TranslationY;
-	uint16_t TranslationZ;
-
-	uint16_t ScaleX;
-	uint16_t ScaleY;
-	uint16_t ScaleZ;
-
-	uint32_t DataSize;
+		animSeqs = Reader.Read<RPakPtr>();
+		unk2 = Reader.Read<__int64>();
+	}
 };
+
+
 
 // MODELS
 // --- mdl_ ---
-struct ModelHeaderS50
+#define MODEL_HAS_BBOX    (1 << 0)
+#define MODEL_HAS_CACHE   (1 << 1)
+#define MODEL_HAS_PHYSICS (1 << 2)
+
+// size: 0x50
+struct ModelHeaderV8
 {
 	// .rmdl
-	uint32_t SkeletonIndex;
-	uint32_t SkeletonOffset;
+	RPakPtr studioData;
 
-	uint32_t NameIndex;
-	uint32_t NameOffset;
+	RPakPtr name;
+
+	char unk1[8];
 
 	// .phy
-	uint32_t PhyIndex;
-	uint32_t PhyOffset;
-	uint64_t Padding3;
+	RPakPtr phyData;
 
 	// .vvd
-	uint32_t BlockIndex1;
-	uint32_t BlockOffset1;
-	uint64_t Padding4;
+	RPakPtr vgCacheData;
+	RPakPtr animRigs;
 
-	uint32_t Padding5;
-	uint32_t StreamedDataSize;
-	uint32_t DataFlags;
-	uint64_t Padding6;
+	int animRigCount;
+	int unkDataSize;
+	int alignedStreamingSize;
 
-	uint32_t AnimSequenceCount;
+	int animSeqCount;
+	RPakPtr animSeqs;
 
+	char unk2[8];
 };
 
-struct ModelHeaderS68
+// size: 0x78
+struct ModelHeaderV9
 {
-	// .rmdl
-	uint32_t SkeletonIndex;
-	uint32_t SkeletonOffset;
-	uint64_t Padding;
+	RPakPtr studioData;
+	char unk1[8];
 
-	uint32_t NameIndex;
-	uint32_t NameOffset;
-	uint64_t Padding2;
+	RPakPtr name;
+	char unk2[8];
 
-	// .phy
-	uint32_t PhyIndex;
-	uint32_t PhyOffset;
-	uint64_t Padding3;
+	RPakPtr phyData;
+	char unk3[8];
 
-	// .vvd
-	uint32_t BlockIndex1;
-	uint32_t BlockOffset1;
-	uint64_t Padding4;
+	RPakPtr vgCacheData;
 
-	uint32_t Padding5;
-	uint32_t StreamedDataSize;
-	uint32_t DataFlags;
-	uint64_t Padding6;
+	RPakPtr animRigs;
 
-	uint32_t AnimSequenceCount;
-	uint32_t AnimSequenceIndex;
-	uint32_t AnimSequenceOffset;
+	int animRigCount;
 
-	uint64_t Padding7;
+	int unkDataSize;
+	int alignedStreamingSize; // full size of the starpak entry, aligned to 4096.
+
+	char unk4[8];
+
+	int animSeqCount;
+	RPakPtr animSeqs;
+
+	char unk5[8];
+	char unk6[8];
+	char unk7[8];
 };
 
-struct ModelHeaderS80
+// size: 0x68
+struct ModelHeaderV12_1
 {
-	// .rmdl
-	uint32_t SkeletonIndex;
-	uint32_t SkeletonOffset;
-	uint64_t Padding;
+	// IDST data
+	// .mdl
+	RPakPtr studioData;
+	char unk1[8];
 
-	uint32_t NameIndex;
-	uint32_t NameOffset;
-	uint64_t Padding2;
+	// model path
+	// e.g. mdl/vehicle/goblin_dropship/goblin_dropship.rmdl
+	RPakPtr name;
+	char unk2[8];
 
 	// .phy
-	uint32_t PhyIndex;
-	uint32_t PhyOffset;
-	uint64_t Padding3;
+	RPakPtr phyData;
+	char unk3[8];
+
+	// preload cache data for static props
+	RPakPtr vgCacheData;
+
+	// pointer to data for the model's arig guid(s?)
+	RPakPtr animRigs;
+
+	// this is a guess based on the above ptr's data. i think this is == to the number of guids at where the ptr points to
+	int animRigCount;
+
+	// size of the data kept in starpak
+	int unkDataSize;
+	int alignedStreamingSize; // full size of the starpak entry, aligned to 4096.
+
+	char unk4[8];
+
+	// number of anim sequences directly associated with this model
+	int animSeqCount;
+	RPakPtr animSeqs;
+
+	char unk5[8];
+};
+
+// size: 0x80
+struct ModelHeaderV13
+{
+	// .rmdl
+	RPakPtr studioData;
+	char unk1[8];
+
+	RPakPtr name;
+	char unk2[8];
+
+	// .phy
+	RPakPtr phyData;
+	char unk3[8];
 
 	// .vvd
 	// this pointer is not always registered
 	// similar data will often be streamed from a mandatory starpak
-	uint32_t VGIndex1;
-	uint32_t VGOffset1;
-	uint64_t Padding4;
+	RPakPtr vgCacheData;
+	RPakPtr animRigs;
 
-	uint32_t Padding5;
-	uint32_t StreamedDataSize;
-	uint32_t DataFlags;
+	int animRigCount;
+	int unkDataSize; // this is the size of vvd, vvc, vvw, vtx
+	int alignedStreamingSize;
 
-	float Box[6];
-	uint64_t Padding6;
+	Vector3 bbox_min;
+	Vector3 bbox_max;
 
-	uint32_t AnimSequenceCount;
-	uint32_t AnimSequenceIndex;
-	uint32_t AnimSequenceOffset;
+	char unk4[8];
 
-	uint64_t Padding7;
+	int animSeqCount;
+	RPakPtr animSeqs;
+
+	char unk5[8];
 };
 
-struct RMdlSkeletonHeader
+struct ModelHeaderV16
 {
-	uint32_t Magic;
-	uint32_t Version;
-	uint32_t Hash;
-	uint32_t NameTableOffset;
+	RPakPtr studioData;
+	RPakPtr name;
 
-	char SkeletonName[0x40];
+	char unk[8];
 
-	uint32_t DataSize;
+	RPakPtr vgCacheData;
 
-	float EyePosition[3];
-	float IllumPosition[3];
-	float HullMin[3];
-	float HullMax[3];
-	float ViewBBMin[3];
-	float ViewBBMax[3];
+	RPakPtr animRigs;
+	int animRigCount;
 
-	uint32_t Flags; // 0x9c
+	int alignedStreamingSize;
 
-	uint32_t BoneCount; // 0xa0
-	uint32_t BoneDataOffset; // 0xa4
+	Vector3 bbox_min;
+	Vector3 bbox_max;
 
-	uint32_t BoneControllerCount;
-	uint32_t BoneControllerOffset;
+	short unk1; // count for unk3 if unk3 is a ptr?
+	short animSeqCount;
 
-	uint32_t HitboxCount;
-	uint32_t HitboxOffset;
+	char unk2[4];
 
-	uint32_t LocalAnimCount;
-	uint32_t LocalAnimOffset;
+	RPakPtr animSeqs;
 
-	uint32_t LocalSeqCount;
-	uint32_t LocalSeqOffset;
-
-	uint32_t ActivityListVersion;
-	uint32_t EventsIndexed;
-
-	uint32_t TextureCount;
-	uint32_t TextureOffset;
-
-	uint32_t TextureDirCount;
-	uint32_t TextureDirOffset;
-
-	uint32_t SkinReferenceCount;	// Total number of references (submeshes)
-	uint32_t SkinFamilyCount;		// Total skins per reference
-	uint32_t SkinReferenceOffset;	// Offset to data
-
-	uint32_t BodyPartCount;
-	uint32_t BodyPartOffset;
-
-	uint32_t AttachmentCount;
-	uint32_t AttachmentOffset;
-
-	uint8_t Unknown2[0x14];
-
-	uint32_t NahhhO;
-	uint32_t SubmeshLodsOffset;
-
-	uint8_t Unknown3[0x44];
-	uint32_t OffsetToBoneRemapInfo;
-	uint32_t BoneRemapCount;
+	char unk3[8];
 };
 
-struct RMdlSkeletonHeader_S3
+struct ModelHeader
 {
-	uint32_t Magic;
-	uint32_t Version;
-	uint32_t Hash;
-	uint32_t NameTableOffset;
-
-	char SkeletonName[0x40];
-
-	uint32_t DataSize;
-
-	float EyePosition[3];
-	float IllumPosition[3];
-	float HullMin[3];
-	float HullMax[3];
-	float ViewBBMin[3];
-	float ViewBBMax[3];
-
-	uint32_t Flags; // 0x9c
-
-	uint32_t BoneCount; // 0xa0
-	uint32_t BoneDataOffset; // 0xa4
-
-	uint32_t BoneControllerCount;
-	uint32_t BoneControllerOffset;
-
-	uint32_t HitboxCount;
-	uint32_t HitboxOffset;
-
-	uint32_t LocalAnimCount;
-	uint32_t LocalAnimOffset;
-
-	uint32_t LocalSeqCount;
-	uint32_t LocalSeqOffset;
-
-	uint32_t ActivityListVersion;
-	uint32_t EventsIndexed;
-
-	uint32_t TextureCount;
-	uint32_t TextureOffset;
-
-	uint32_t TextureDirCount;
-	uint32_t TextureDirOffset;
-
-	uint32_t SkinReferenceCount;	// Total number of references (submeshes)
-	uint32_t SkinFamilyCount;		// Total skins per reference
-	uint32_t SkinReferenceOffset;	// Offset to data
-
-	uint32_t BodyPartCount;
-	uint32_t BodyPartOffset;
-
-	uint32_t AttachmentCount;
-	uint32_t AttachmentOffset;
-
-	uint8_t Unknown2[0x14];
-
-	uint32_t SubmeshLodsOffset;
-
-	uint8_t Unknown3[0x64];
-	uint32_t OffsetToBoneRemapInfo;
-	uint32_t BoneRemapCount;
-};
-
-struct RMdlTitanfallSkeletonHeader
-{
-	uint32_t Magic;
-	uint32_t Version;
-	uint32_t Hash;
-	uint32_t NameTableOffset;
-
-	char SkeletonName[0x40];
-
-	uint32_t DataSize;
-
-	float EyePosition[3];
-	float IllumPosition[3];
-	float HullMin[3];
-	float HullMax[3];
-	float ViewBBMin[3];
-	float ViewBBMax[3];
-
-	uint32_t Flags;
-
-	uint32_t BoneCount;
-	uint32_t BoneDataOffset;
-
-	uint32_t BoneControllerCount;
-	uint32_t BoneControllerOffset;
-
-	uint32_t HitboxCount;
-	uint32_t HitboxOffset;
-
-	uint32_t LocalAnimCount;
-	uint32_t LocalAnimOffset;
-
-	uint32_t LocalSeqCount;
-	uint32_t LocalSeqOffset;
-
-	uint32_t ActivityListVersion;
-	uint32_t EventsIndexed;
-
-	uint32_t TextureCount;
-	uint32_t TextureOffset;
-
-	uint32_t TextureDirCount;
-	uint32_t TextureDirOffset;
-
-	uint32_t SkinReferenceCount;	// Total number of references (submeshes)
-	uint32_t SkinFamilyCount;		// Total skins per reference
-	uint32_t SkinReferenceOffset;	// Offset to data
-
-	uint32_t BodyPartCount;
-	uint32_t BodyPartOffset;
-
-	uint32_t AttachmentCount;
-	uint32_t AttachmentOffset;
-
-	uint8_t Unknown2[0x14];
-
-	uint32_t SubmeshLodsOffsetOg;
-
-	uint8_t Unknown3[0x98];
-
-	uint32_t SubmeshLodsOffset;
-	uint32_t MeshOffset;
-};
-
-struct RMdlBone
-{
-	uint32_t NameOffset;		// Relative to current position
-	int32_t ParentIndex;
-
-	uint8_t UnknownNegativeOne[0x18];
-
-	Math::Vector3 Position;		// Local
-	Math::Quaternion Rotation;	// Local
-
-	uint8_t Padding[0x78];
-};
-
-struct RMdlTitanfallBone
-{
-	uint32_t NameOffset;		// Relative to current position
-	int32_t ParentIndex;
-
-	uint8_t UnknownNegativeOne[0x18];
-
-	Math::Vector3 Position;		// Local
-	Math::Quaternion Rotation;	// Local
-
-	uint8_t UnknownData[0x24];
-
-	float RotationScale[3];
-
-	uint8_t Padding[0x88];
-};
-
-struct RMdlMeshStreamHeader
-{
-	uint32_t Version;
-	uint32_t VertCacheSize;
-
-	uint16_t MaxBonesPerStrip;
-	uint16_t MaxBonesPerTri;
-
-	uint32_t MaxBonesPerVert;
-	uint32_t Hash;
-
-	uint32_t NumLods;
-	
-	uint32_t MaterialReplacementOffset;		// Add 0x8 * 0x4 to get end of file.
-
-	uint32_t NumBodyParts;
-	uint32_t BodyPartOffset;
-};
-
-struct RMdlMeshHeader
-{
-	uint32_t Magic;
-	uint32_t Version;
-	uint32_t Hash;
-
-	uint32_t NumLods;
-	uint32_t NumLodVertCounts[8];
-
-	uint32_t NumFixups;
-	uint32_t FixupOffset;
-
-	uint32_t VertexOffset;
-	uint32_t TangentOffset;
-};
-
-struct RMdlVGHeaderOld
-{
-	uint32_t Magic;		// 0x47567430	'0tvg'
-	uint32_t Version;	// 0x1
-	uint32_t Unknown;	// Usually 0
-	uint32_t DataSize;	// Total size of data + header in starpak
-
-	uint64_t BoneRemapOffset;
-	uint64_t BoneRemapCount;		// Only 1 byte each
-
-	uint64_t SubmeshOffset;
-	uint64_t SubmeshCount;		// 0x48 each
-
-	uint64_t IndexOffset;
-	uint64_t IndexCount;		// 0x2 each (uint16_t)
-
-	uint64_t VertexOffset;
-	uint64_t VertexCount;		// 0x1 each aka, in bytes
-
-	uint64_t ExtendedWeightsOffset;
-	uint64_t ExtendedWeightsCount;		// Only 1 byte per count
-
-	uint64_t Unknown2Offset;
-	uint64_t Unknown2Count;		// 0x30 each
-
-	uint64_t LodOffset;
-	uint64_t LodCount;			// 0x8 each
-
-	uint64_t ExternalWeightsOffset;
-	uint64_t ExternalWeightsCount;	// 0x10 each
-
-	uint64_t StripsOffset;
-	uint64_t StripsCount;			// 0x23 each
-};
-
-enum class RMdlVGStreamFlags : uint32_t
-{
-	Unknown1 = (1 << 0),
-	Unknown2 = (1 << 1),
-	Unknown3 = (1 << 2),
-	Unknown4 = (1 << 3),
-	ShouldAlwaysBeSet = (1 << 4),
-	Unknown6 = (1 << 5),
-	HasSubVGHeaders2 = (1 << 6),
-	HasSubVGHeaders = (1 << 7),
-};
-
-struct RMdlVGHeader
-{
-	uint32_t Magic;		// 0x47567430	'0tVG'
-	uint32_t Version;	// 0x1
-	uint32_t Padding;
-	uint32_t LodCount;	// If 0x1, this IS the first and only lod, if > 0x1, MORE 0tVG headers follow PER lod count
-
-	uint8_t Unknown[0x14];
-	uint32_t DataSize;	// Total size of data + header in starpak
-	uint32_t SubmeshCount;
-	uint32_t Padding2;
-	uint32_t StreamFlags;
-	uint8_t Unknown2[0xC];	// We're either at 
-};
-
-struct RMdlVGIndexCountPacked
-{
-	uint64_t Count : 56;
-	uint64_t Type : 8;
-};
-
-struct RMdlVGSubmesh
-{
-	uint32_t Flags1;					// Flags that pertain to this submesh
-	uint32_t Flags2;					// Also flags that pertain to this submesh
-	uint32_t VertexBufferStride;		// Stride in bytes of the vertex buffer
-	uint32_t VertexCount;				// Count of vertices used
-
-	uint64_t IndexOffset;
-	RMdlVGIndexCountPacked IndexPacked;	// 0x2 each (uint16_t)
-
-	uint64_t VertexOffset;
-	uint64_t VertexCountBytes;		// 0x1 each aka, in bytes
-
-	uint64_t ExtendedWeightsOffset;
-	uint64_t ExtendedWeightsCount;		// Only 1 byte per count
-
-	uint64_t ExternalWeightsOffset;
-	uint64_t ExternalWeightsCount;	// 0x10 each
-
-	uint64_t StripsOffset;
-	uint64_t StripsCount;			// 0x23 each
-};
-
-struct RMdlVGSubmeshOld
-{
-	uint32_t Flags1;					// Flags that pertain to this submesh
-	uint32_t Flags2;					// Also flags that pertain to this submesh
-	uint32_t VertexOffsetBytes;			// Offset into vertex buffer by bytes
-	uint32_t VertexBufferStride;		// Stride in bytes of the vertex buffer
-	uint32_t VertexCount;				// Count of vertices used
-	uint32_t Int6;
-	uint32_t ExtendedWeightsOffset;		// Offset into the extended weights buffer
-	uint32_t Int8;
-	uint32_t IndexOffset;				// Some form of index offset
-	uint32_t IndexCount;				// Some form of index count
-	uint32_t VertexOffset2;				// Some form of vertex offset (Not always used??)
-	uint32_t VertexCount2;				// some form of vertex count
-	uint32_t StripIndex;				// Index into the strips structs
-	uint32_t Int14;
-	uint32_t Int15;
-	uint32_t Int16;
-	uint32_t Int17;
-	uint32_t Int18;
-};
-
-struct RMdlVGStrip
-{
-	uint32_t IndexCount;
-	uint32_t IndexOffset;
-
-	uint32_t VertexCount;
-	uint32_t VertexOffset;
-
-	uint16_t NumBones;
-
-	uint8_t StripFlags;
-
-	uint8_t Padding[0x10];
-};
-
-struct RMdlVGLod
-{
-	uint16_t SubmeshIndex;
-	uint16_t SubmeshCount;
-	float Distance;
-};
-
-struct RMdlPhyHeader
-{
-	uint32_t HeaderSize;
-	uint32_t Id;
-	uint32_t SolidCount;
-	uint32_t Checksum;
-	uint32_t TextOffset; // offset to the text section
-};
-
-#define LAST_IND(x,part_type)    (sizeof(x)/sizeof(part_type) - 1)
-#if defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN
-#  define LOW_IND(x,part_type)   LAST_IND(x,part_type)
-#  define HIGH_IND(x,part_type)  0
-#else
-#  define HIGH_IND(x,part_type)  LAST_IND(x,part_type)
-#  define LOW_IND(x,part_type)   0
-#endif
-
-#define BYTEn(x, n)   (*((uint8_t*)&(x)+n))
-#define WORDn(x, n)   (*((uint16_t*)&(x)+n))
-#define DWORDn(x, n)  (*((uint32_t*)&(x)+n))
-#define LOBYTE(x)  BYTEn(x,LOW_IND(x,uint8_t))
-#define LOWORD(x)  WORDn(x,LOW_IND(x,uint16_t))
-#define LODWORD(x) DWORDn(x,LOW_IND(x,uint32_t))
-#define HIBYTE(x)  BYTEn(x,HIGH_IND(x,uint8_t))
-#define HIWORD(x)  WORDn(x,HIGH_IND(x,uint16_t))
-#define HIDWORD(x) DWORDn(x,HIGH_IND(x,uint32_t))
-#define BYTE1(x)   BYTEn(x,  1)         // byte 1 (counting from 0)
-#define BYTE2(x)   BYTEn(x,  2)
-
-struct RMdlPackedVertexPosition
-{
-	uint32_t _Value[2];
-
-	Math::Vector3 Unpack()
+	struct mdlversion_t {
+		int major = 0;
+		__int8 minor = 0;
+	};
+
+	RPakPtr studioData;
+	RPakPtr pName;
+	string name;
+	RPakPtr phyData;
+	RPakPtr vgCacheData;
+	RPakPtr animRigs;
+	RPakPtr animSeqs;
+
+	int animRigCount;
+	int animSeqCount;
+	int alignedStreamingSize;
+
+	// probably min/max
+	Vector3 bbox_min;
+	Vector3 bbox_max;
+
+private:
+	mdlversion_t _version;
+	int _flags = 0;
+
+public:
+	inline mdlversion_t version() { return _version; };
+	inline int flags() { return _flags; };
+
+	inline bool IsFlagSet(int flag) { return _flags & flag; };
+	inline void SetFlags(int flag) { _flags |= flag; };
+	inline void SetVersion(int major, __int8 minor = 0) { _version = { major, minor }; };
+
+	void ReadFromAssetStream(std::unique_ptr<IO::MemoryStream>* RpakStream, int headerSize, int assetVersion)
 	{
-		float x, y, z;
+		IO::BinaryReader Reader = IO::BinaryReader(RpakStream->get(), true);
 
-		x = ((_Value[0] & 0x1FFFFF) * 0.0009765625) - 1024.0;
-		y = ((((_Value[1] & 0x3FFu) << 11) + (_Value[0] >> 21)) * 0.0009765625) - 1024.0;
-		z = ((_Value[1] >> 10) * 0.0009765625) - 2048.0;
+		switch (assetVersion)
+		{
+		case 8:
+		{
+			ModelHeaderV8 mht = Reader.Read<ModelHeaderV8>();
+			studioData = mht.studioData;
+			pName = mht.name;
+			phyData = mht.phyData;
+			vgCacheData = mht.vgCacheData;
+			animRigs = mht.animRigs;
+			animSeqs = mht.animSeqs;
+			animRigCount = mht.animRigCount;
+			animSeqCount = mht.animSeqCount;
+			alignedStreamingSize = mht.unkDataSize;
 
-		return Math::Vector3(x, y, z);
+			SetVersion(8);
+			break;
+		}
+		// versions 9, 10, 11, 12.0 all share the same model header
+		case 9:
+		case 10:
+		case 11:
+		{
+			ModelHeaderV9 mht = Reader.Read<ModelHeaderV9>();
+			studioData = mht.studioData;
+			pName = mht.name;
+			phyData = mht.phyData;
+			vgCacheData = mht.vgCacheData;
+			animRigs = mht.animRigs;
+			animSeqs = mht.animSeqs;
+			animRigCount = mht.animRigCount;
+			animSeqCount = mht.animSeqCount;
+			alignedStreamingSize = mht.alignedStreamingSize;
+
+			SetVersion(assetVersion);
+			break;
+		}
+		case 12:
+		{
+			if (headerSize == 0x78)
+			{
+				ModelHeaderV9 mht = Reader.Read<ModelHeaderV9>();
+				studioData = mht.studioData;
+				pName = mht.name;
+				phyData = mht.phyData;
+				vgCacheData = mht.vgCacheData;
+				animRigs = mht.animRigs;
+				animSeqs = mht.animSeqs;
+				animRigCount = mht.animRigCount;
+				animSeqCount = mht.animSeqCount;
+				alignedStreamingSize = mht.alignedStreamingSize;
+
+				// 12.0
+				SetVersion(assetVersion, 0);
+			}
+			else
+			{
+				ModelHeaderV12_1 mht = Reader.Read<ModelHeaderV12_1>();
+				studioData = mht.studioData;
+				pName = mht.name;
+				phyData = mht.phyData;
+				vgCacheData = mht.vgCacheData;
+				animRigs = mht.animRigs;
+				animSeqs = mht.animSeqs;
+				animRigCount = mht.animRigCount;
+				animSeqCount = mht.animSeqCount;
+				alignedStreamingSize = mht.alignedStreamingSize;
+
+				// 12.1 - this is not always correct
+				// there are technically two "subversions" of v12,
+				// but i'm not really sure how to tell them apart
+				SetVersion(assetVersion, 1);
+			}
+			break;
+		}
+		case 13:
+		case 14:
+		case 15:
+		{
+			ModelHeaderV13 mht = Reader.Read<ModelHeaderV13>();
+			studioData = mht.studioData;
+			pName = mht.name;
+			phyData = mht.phyData;
+			vgCacheData = mht.vgCacheData;
+			animRigs = mht.animRigs;
+			animSeqs = mht.animSeqs;
+			animRigCount = mht.animRigCount;
+			animSeqCount = mht.animSeqCount;
+			bbox_min = mht.bbox_min;
+			bbox_max = mht.bbox_max;
+			alignedStreamingSize = mht.alignedStreamingSize;
+
+			SetFlags(MODEL_HAS_BBOX);
+
+			SetVersion(assetVersion);
+			break;
+		}
+		case 16:
+		{
+			ModelHeaderV16 mht = Reader.Read<ModelHeaderV16>();
+			studioData = mht.studioData;
+			pName = mht.name;
+			vgCacheData = mht.vgCacheData;
+			animRigs = mht.animRigs;
+			animSeqs = mht.animSeqs;
+			animRigCount = mht.animRigCount;
+			animSeqCount = mht.animSeqCount;
+			bbox_min = mht.bbox_min;
+			bbox_max = mht.bbox_max;
+			alignedStreamingSize = mht.alignedStreamingSize;
+
+			SetVersion(assetVersion);
+		}
+		}
+
+		if (phyData.Index || phyData.Offset)
+			SetFlags(MODEL_HAS_PHYSICS);
+
+		if (vgCacheData.Index || vgCacheData.Offset)
+			SetFlags(MODEL_HAS_CACHE);
 	}
 };
 
-struct RMdlPackedVertexNormal
+struct ModelCPU
 {
-	uint32_t _Value;
-
-	Math::Vector3 Unpack()
-	{
-		float x, y, z;
-
-		float v87 = ((2 * _Value) >> 30);
-		int v88 = 255;
-		if (((8 * _Value) >> 31) != 0.0)
-			v88 = -255;
-		float v89 = (float)v88;
-		float v90 = ((_Value << 13) >> 23) + -256.0;
-		float v91 = ((16 * _Value) >> 23) + -256.0;
-		float v92 = ((v91 * v91) + 65025.0) + (v90 * v90);
-
-		float v93;
-
-		if (v92 < 0.0)
-		{
-			v93 = sqrtf(v92);
-		}
-		else
-		{
-			v93 = sqrtf(v92); // fsqrt
-		}
-
-		// file offset: 0x23771
-
-		int v97 = 0;
-
-		float v1, v2, v3;
-
-		v1 = v90 * (1.0 / v93);
-		v2 = v89 * (1.0 / v93);
-		v3 = v91 * (1.0 / v93);
-		if (v87 == 1.0)
-			v97 = -1;
-		else
-			v97 = 0;
-		if (v87 == 2.0)
-		{
-			x = v3;
-			y = v1;
-			z = v2;
-		}
-		else
-		{
-			x = v2;
-			y = v3;
-			z = v1;
-		}
-		if (!v97)
-		{
-			v1 = x;
-			v2 = y;
-			v3 = z;
-		}
-		return Math::Vector3(v1,v2,v3);
-	}
-};
-
-struct RMdlPackedVertexWeights
-{
-	uint16_t BlendWeights[2];
-	uint8_t BlendIds[4];
-};
-
-struct RMdlVGExternalWeights
-{
-	union
-	{
-		struct
-		{
-			uint16_t Weights[4];
-			uint32_t Unknown;
-		};
-
-		float SimpleWeights[3];
-	};
-
-	uint8_t WeightIds[3];
-	uint8_t NumWeights;
-};
-
-struct RMdlFixup
-{
-	uint32_t LodIndex;
-	
-	uint32_t VertexIndex;
-	uint32_t VertexCount;
-};
-
-struct RMdlVertex
-{
-	union
-	{
-		struct
-		{
-			uint16_t Weights[4];
-			uint32_t WeightTableIndex;
-		};
-
-		float SimpleWeights[3];
-	};
-	
-	uint8_t WeightIds[3];
-	uint8_t NumWeights;
-
-	Math::Vector3 Position;
-	Math::Vector3 Normal;
-	Math::Vector2 UVs;
-};
-
-struct RMdlBodyPart
-{
-	uint32_t NumModels;
-	uint32_t ModelOffset;
-};
-
-struct RMdlTitanfallBodyPart
-{
-	uint32_t NameOffset;
-	uint32_t NumModels;
-	uint32_t BaseIndex;
-	uint32_t ModelOffset;
-};
-
-struct RMdlModel
-{
-	uint32_t NumLods;
-	uint32_t LodOffset;
-};
-
-struct RMdlTitanfallModel
-{
-	char Name[0x40];
-
-	uint32_t ModelType;
-	float BoundingRadius;
-
-	uint32_t NumMeshes;
-	uint32_t MeshOffset;
-	uint32_t NumVertices;
-	uint32_t VertexIndex;
-	uint32_t TangentsIndex;
-
-	uint8_t Unk1[0x38];
-};
-
-struct RMdlLod
-{
-	uint32_t SubmeshCount;
-	uint32_t SubmeshOffset;
-	float Distance;
-};
-
-struct RMdlSubmesh
-{
-	uint32_t NumStripGroups;
-	uint32_t StripGroupOffset;
-
-	uint8_t Flags;
-};
-
-struct RMdlStripGroup
-{
-	uint32_t VertexCount;
-	uint32_t VertexOffset;
-	
-	uint32_t IndexCount;
-	uint32_t IndexOffset;
-
-	uint32_t NumStrips;
-	uint32_t StripOffset;
-
-	uint8_t Flags;
-};
-
-struct RMdlStrip
-{
-	uint32_t IndexCount;
-	uint32_t IndexOffset;
-	
-	uint32_t VertexCount;
-	uint32_t VertexOffset;
-
-	uint16_t NumBones;
-
-	uint8_t StripFlags;
-
-	uint32_t NumBoneChanges;
-	uint32_t BoneChangeOffset;
-};
-
-struct RMdlStripVert
-{
-	uint8_t BoneWeightIndex[3];
-	uint8_t NumBones;
-
-	uint16_t VertexIndex;
-
-	uint8_t BoneIds[3];
-};
-
-struct RMdlExtendedWeight
-{
-	uint16_t Weight;
-	uint16_t BoneId;
-};
-
-struct RMdlLodSubmeshOld
-{
-	uint32_t Index;
-	
-	uint16_t Unknown1;
-	uint16_t Unknown2;
-	uint16_t Unknown3;
-	uint16_t Unknown4;
-
-	uint8_t UnknownPad[0x28];
-
-	uint32_t LodVertCounts[8];
-
-	uint32_t Unknown5;
-	uint32_t Unknown6;
-};
-
-struct RMdlLodSubmesh
-{
-	uint32_t Index;
-
-	uint16_t Unknown1;
-	uint16_t Unknown2;
-	uint16_t Unknown3;
-	uint16_t Unknown4;
-
-	uint8_t UnknownPad[0x18];
-
-	uint32_t LodVertCounts[8];
-
-	uint32_t Unknown5;
-	uint32_t Unknown6;
-};
-
-struct RMdlTitanfallLodSubmesh
-{
-	uint32_t Index;
-
-	uint16_t Unknown1;
-	uint16_t Unknown2;
-	uint16_t Unknown3;
-	uint16_t Unknown4;
-
-	uint8_t UnknownPad[0x28];
-
-	uint32_t LodVertCounts[8];
-
-	uint8_t UnknownPad2[0x20];
-};
-
-struct RMdlTexture
-{
-	uint32_t Offset;
-	uint64_t MaterialHash;
+	RPakPtr phyData;
+	int phyDataSize;
+	int modelLength;
 };
 
 // MATERIALS
 // --- matl ---
+struct UnknownMaterialSectionV15
+{
+	// required but seems to follow a pattern. maybe related to "Unknown2" above?
+	// nulling these bytes makes the material stop drawing entirely
+	uint32_t unk1[8];
+
+	// for more details see the 'UnknownMaterialSectionV12' struct.
+	uint32_t unkRenderFlags;
+	uint16_t visFlags; // different render settings, such as opacity and transparency.
+	uint16_t faceDrawFlags; // how the face is drawn, culling, wireframe, etc.
+
+	char pad[8];
+};
+
+
+struct MaterialHeaderV16
+{
+	__int64 reservedVtbl; // Gets set to CMaterialGlue vtbl ptr
+	char padding[8]; // unused
+
+	uint64_t guid; // guid of this material asset
+
+	RPakPtr pName; // pointer to partial asset path
+	RPakPtr pSurfaceProp; // pointer to surfaceprop (as defined in surfaceproperties.txt)
+	RPakPtr pSurfaceProp2; // pointer to surfaceprop2 
+
+	// IDX 1: DepthShadow
+	// IDX 2: DepthPrepass
+	// IDX 3: DepthVSM
+	// IDX 4: DepthShadowTight
+	// IDX 5: ColPass
+
+	uint64_t guidRefs[5]; // Required to have proper textures.
+	uint64_t shadersetGuid; // guid of the shaderset asset that this material uses
+
+	RPakPtr pTextureHandles; // TextureGUID Map
+	RPakPtr pStreamingTextureHandles; // reserved slot for texture guids which have streamed mip levels
+	short streamingTextureCount; // reserved slot for the number of textures with streamed mip levels
+
+	short width;
+	short height;
+
+	short unknown1; // reserved texture count?
+
+	int flags; // related to cpu data
+
+	int unknown2;
+	int unknown3;
+	int unknown4;
+
+	__int64 flags2;
+
+	UnknownMaterialSectionV15 unknownSections;
+
+	int unk_v16[2];
+
+	byte bytef0;
+	byte bytef1;
+
+	byte materialType; // used '4' and '8' observed
+
+	byte bytef3; // used for unksections loading in UpdateMaterialAsset
+
+	int unk;
+
+	__int64 textureAnimationGuid;
+
+	int unk1_v16[6];
+};
+
+// structs taken from repak - thanks Rika
+struct UnknownMaterialSectionV12
+{
+	// not sure how these work but 0xF0 -> 0x00 toggles them off and vice versa.
+	// they seem to affect various rendering filters, said filters might actually be the used shaders.
+	// the duplicate one is likely for the second set of textures which (probably) never gets used.
+	uint32_t UnkRenderLighting;
+	uint32_t UnkRenderAliasing;
+	uint32_t UnkRenderDoF;
+	uint32_t UnkRenderUnknown;
+
+	uint32_t UnkRenderFlags; // this changes sometimes.
+	uint16_t VisibilityFlags; // different render settings, such as opacity and transparency.
+	uint16_t FaceDrawingFlags; // how the face is drawn, culling, wireframe, etc.
+
+	uint64_t Padding;
+};
+
+struct MaterialHeaderV12
+{
+	__int64 m_VtblReserved; // Gets set to CMaterialGlue vtbl ptr
+	char m_Padding[0x8]; // unused
+
+	uint64_t guid; // guid of this material asset
+
+	RPakPtr pName; // pointer to partial asset path
+	RPakPtr pSurfaceProp; // pointer to surfaceprop (as defined in surfaceproperties.txt)
+	RPakPtr pSurfaceProp2; // pointer to surfaceprop2
+
+	// IDX 1: DepthShadow
+	// IDX 2: DepthPrepass
+	// IDX 3: DepthVSM
+	// IDX 4: ColPass
+	// Titanfall is does not have 'DepthShadowTight'
+
+	uint64_t guidRefs[4]; // Required to have proper textures.
+
+	// these blocks dont seem to change often but are the same?
+	// these blocks relate to different render filters and flags. still not well understood.
+	UnknownMaterialSectionV12 m_UnknownSections[2];
+
+	uint64_t shadersetGuid; // guid of the shaderset asset that this material uses
+
+	RPakPtr textureHandles; // TextureGUID Map 1
+
+	// should be reserved - used to store the handles for any textures that have streaming mip levels
+	RPakPtr streamingTextureHandles;
+
+	short streamingTextureHandleCount; // Number of textures with streamed mip levels.
+	int flags; // see ImageFlags in the apex struct.
+	short unk1; // might be "m_Unknown2"
+
+	uint64_t unk2; // haven't observed anything here, however I really doubt this is actually padding.
+
+	// seems to be 0xFBA63181 for loadscreens
+	int unk3; // name carried over from apex struct.
+
+	int unk4; // this might actually be "m_Unknown4"
+
+	__int64 flags2;
+
+	short width;
+	short height;
+	int unk5; // might be padding but could also be something else such as "m_Unknown1"?.
+
+	/* ImageFlags
+	0x050300 for loadscreens, 0x1D0300 for normal materials.
+	0x1D has been observed, seems to invert lighting? used on some exceptionally weird materials.*/
+};
+
 struct MaterialHeader
 {
-	uint8_t Unknown[0x10];
-	uint64_t Hash;
+	__int64 m_VtblReserved;
+	char m_Padding[0x8];
+	uint64_t guid; // guid of this material asset
 
-	uint32_t NameIndex;
-	uint32_t NameOffset;
-	uint32_t TypeIndex;
-	uint32_t TypeOffset;
-	uint32_t SurfaceIndex;
-	uint32_t SurfaceOffset;
+	RPakPtr pName; // pointer to partial asset path
+	RPakPtr pSurfaceProp; // pointer to surfaceprop (as defined in surfaceproperties.rson)
+	RPakPtr pSurfaceProp2; // pointer to surfaceprop2 
 
-	uint8_t Unknown2[0x28];
-	uint64_t ShaderSetHash;
+	// IDX 1: DepthShadow
+	// IDX 2: DepthPrepass
+	// IDX 3: DepthVSM
+	// IDX 4: DepthShadowTight
+	// IDX 5: ColPass
+	uint64_t materialGuids[5];
+	uint64_t shaderSetGuid; // guid/ptr of shaderset asset
 
-	uint32_t TexturesIndex;
-	uint32_t TexturesOffset;
-	// Also Texture pointer, but less relevant for now.
-	uint32_t UnknownIndex;
-	uint32_t UnknownOffset;
+	RPakPtr textureHandles; // texture guids
+	RPakPtr streamingTextureHandles; // streaming texture guids
 
-	int16_t UnknownSignature; // This seems to be the start of a modified VTF Header, I have no clue what this member does.
-	int16_t Width;
-	int16_t Height;
-	int16_t Unused;
-	uint32_t ImageFlags; // Image Flags, they decide the tiling, stretching etc.
+	short streamingTextureCount; // number of textures with streamed mip levels.
+	short width;
+	short height;
+	short unk1;
 
-	uint8_t Unknown3[0x1C];
+	int someFlags;
+	int unk2;
 
-	uint32_t TexturesTFIndex;
-	uint32_t TexturesTFOffset;
-	uint32_t UnknownTFIndex;
-	uint32_t UnknownTFOffset;
+	int unk3;
+
+	int unk4;
+
+	int unk5;
+	int unk6;
+
+	UnknownMaterialSectionV15 m_UnknownSections[2];
+	char bytef0;
+	char bytef1;
+	char materialType;
+	char bytef3; // used for unksections loading in UpdateMaterialAsset
+	char pad_00F4[4];
+	uint64_t textureAnimationGuid;
+
+	void FromV16(MaterialHeaderV16& mhn)
+	{
+		guid = mhn.guid;
+		pName = mhn.pName;
+		pSurfaceProp = mhn.pSurfaceProp;
+		pSurfaceProp2 = mhn.pSurfaceProp2;
+
+		std::memcpy(&materialGuids, &mhn.guidRefs, sizeof(mhn.guidRefs));
+
+		shaderSetGuid = mhn.shadersetGuid;
+		textureHandles = mhn.pTextureHandles;
+		streamingTextureHandles = mhn.pStreamingTextureHandles;
+		streamingTextureCount = mhn.streamingTextureCount;
+		width = mhn.width;
+		height = mhn.height;
+		unk1 = mhn.unknown1;
+		someFlags = mhn.flags;
+		unk2 = mhn.unknown2;
+		unk3 = mhn.unknown3;
+		unk4 = mhn.unknown4;
+		materialType = mhn.materialType;
+		textureAnimationGuid = mhn.textureAnimationGuid;
+	}
+
+	void FromV12(MaterialHeaderV12& mhn)
+	{
+		guid = mhn.guid;
+		pName = mhn.pName;
+		pSurfaceProp = mhn.pSurfaceProp;
+		pSurfaceProp2 = mhn.pSurfaceProp2;
+
+		std::memcpy(&materialGuids, &mhn.guidRefs, sizeof(mhn.guidRefs));
+
+		shaderSetGuid = mhn.shadersetGuid;
+		textureHandles = mhn.textureHandles;
+		streamingTextureHandles = mhn.streamingTextureHandles;
+		streamingTextureCount = mhn.streamingTextureHandleCount;
+		width = mhn.width;
+		height = mhn.height;
+		unk1 = mhn.unk1;
+		someFlags = mhn.flags;
+		unk2 = mhn.unk2;
+		unk3 = mhn.unk3;
+		unk4 = mhn.unk4;
+	}
+};
+
+// Credits to IJARika
+// the following two structs are found in the ""cpu data"", they are very much alike to what you would use in normal source materials.
+// apex probably has these and more stuff.
+struct UVTransformMatrix
+{
+	// this section is actually broken up into three parts.
+	// c_uvRotScaleX
+	float uvScaleX = 1.0;
+	float uvRotationX = 0.0; // rotation, but w e i r d.
+	// c_uvRotScaleY
+	float uvRotationY = -0.0; //counter clockwise, 0-1, exceeding one causes Weird Stuff to happen.
+	float uvScaleY = 1.0;
+	// c_uvTranslate
+	float uvTranslateX = 0.0;
+	float uvTranslateY = 0.0;
+};
+
+// Credits to IJARika
+struct MaterialCPUData
+{
+	UVTransformMatrix c_uv1; // detail
+	UVTransformMatrix c_uv2; // 1st texture (unconfirmed)
+	UVTransformMatrix c_uv3; // 2nd texture (unconfirmed)
+	UVTransformMatrix c_uv4;
+	UVTransformMatrix c_uv5;
+
+	Vector2 c_uvDistortionIntensity;
+	Vector2 c_uvDistortion2Intensity;
+
+	float c_L0_scatterDistanceScale = 0.166667;
+
+	float c_layerBlendRamp = 0.0;
+
+	float c_opacity = 0.0;
+
+	float c_useAlphaModulateSpecular = 0.0;
+	float c_alphaEdgeFadeExponent = 0.0;
+	float c_alphaEdgeFadeInner = 0.0;
+	float c_alphaEdgeFadeOuter = 0.0;
+
+	float c_useAlphaModulateEmissive = 1.0;
+	float c_emissiveEdgeFadeExponent = 0.0;
+	float c_emissiveEdgeFadeInner = 0.0;
+	float c_emissiveEdgeFadeOuter = 0.0;
+
+	float c_alphaDistanceFadeScale = 10000.0;
+	float c_alphaDistanceFadeBias = -0.0;
+	float c_alphaTestReference = 0.0;
+
+	float c_aspectRatioMulV = 1.778;
+
+	float c_shadowBias = 0.0;
+	float c_shadowBiasStatic = 0.0;
+
+	float c_dofOpacityLuminanceScale = 1.0;
+
+	float c_tsaaDepthAlphaThreshold = 0.0;
+	float c_tsaaMotionAlphaThreshold = 0.9;
+	float c_tsaaMotionAlphaRamp = 10.0;
+	uint32_t c_tsaaResponsiveFlag = 0x0; // this is 0 or 1 I think.
+
+	Vector3 c_outlineColorSDF = { 0.0, 0.0, 0.0 };
+	float c_outlineWidthSDF = 0.0;
+
+	Vector3 c_shadowColorSDF = { 0.0, 0.0, 0.0 };
+	float c_shadowWidthSDF = 0.0;
+
+	Vector3 c_insideColorSDF = { 0.0, 0.0, 0.0 };
+
+	float c_outsideAlphaScalarSDF = 0.0;
+
+	float c_glitchStrength = 0.0;
+
+	float c_vertexDisplacementScale = 0.0;
+
+	float c_innerFalloffWidthSDF = 0.0;
+	float c_innerEdgeOffsetSDF = 0.0;
+
+	Vector2 c_dropShadowOffsetSDF = { 0.0, 0.0 };
+
+	float c_normalMapEdgeWidthSDF = 0.0;
+
+	float c_shadowFalloffSDF = 0.0;
+
+	Vector2 c_L0_scatterAmount = { 0.0, 0.0 };
+	float c_L0_scatterRatio = 0.0;
+
+	float c_L0_transmittanceIntensityScale = 1.0;
+
+	Vector2 c_vertexDisplacementDirection = { 0.0, 0.0 };
+
+	float c_L0_transmittanceAmount = 0.0;
+	float c_L0_transmittanceDistortionAmount = 0.5;
+
+	float c_zUpBlendingMinAngleCos = 1.0;
+	float c_zUpBlendingMaxAngleCos = 1.0;
+	float c_zUpBlendingVertexAlpha = 0.0;
+
+	Vector3 c_L0_albedoTint = { 1.0, 1.0, 1.0 };
+
+	float c_depthBlendScalar = 1.0;
+
+	Vector3 c_L0_emissiveTint = { 0.0, 0.0, 0.0 };
+
+	float c_subsurfaceMaterialID = 0.0;
+
+	Vector3 c_L0_perfSpecColor = { 0.0379723, 0.0379723, 0.0379723 };
+
+	float c_L0_perfGloss = 1.0;
+
+	Vector3 c_L1_albedoTint = { 0.0, 0.0, 0.0 };
+
+	float c_L1_perfGloss = 0.0;
+
+	Vector3 c_L1_emissiveTint = { 0.0, 0.0, 0.0 };
+	Vector3 c_L1_perfSpecColor = { 0.0, 0.0, 0.0 };
+
+	float c_splineMinPixelPercent = 0.0;
+
+	Vector2 c_L0_anisoSpecCosSinTheta = { 1.0, 0.0 };
+	Vector2 c_L1_anisoSpecCosSinTheta = { 1.0, 0.0 };
+
+	float c_L0_anisoSpecStretchAmount = 0.0;
+	float c_L1_anisoSpecStretchAmount = 0.0;
+
+	float c_L0_emissiveHeightFalloff = 0.0;
+	float c_L1_emissiveHeightFalloff = 0.0;
+
+	float c_L1_transmittanceIntensityScale = 0.0;
+	float c_L1_transmittanceAmount = 0.0;
+	float c_L1_transmittanceDistortionAmount = 0.0;
+
+	float c_L1_scatterDistanceScale = 0.0;
+	Vector3 c_L1_scatterAmount = { 0.0, 0.0, 0.0 };
+	float c_L1_scatterRatio = 0.0;
+
+	float ScatterAmountAndRatio1[4];
+	float CharacterBoostTintAndFogScale[4];
+	float EdgeDetectOutlineColorAndAlpha[4];
+	float EdgeDetectOutlineWidth;
+	float EdgeDetectOutlineFalloffExp;
+	float CharacterBoostScale;
+	float CharacterBoostBias;
+	float AlphaErosionHardnessAndc_iridescentViewFacingColor[4];
+	float IridescentViewFacingFalloffAndBufferPadding[4];
+};
+
+struct MaterialCPUHeader
+{
+	RPakPtr  m_nData;
+	uint32_t m_nDataSize;
+	uint32_t m_nVersionMaybe;
 };
 
 struct StarpakStreamEntry
@@ -1242,12 +1179,12 @@ struct StarpakStreamEntry
 	uint64_t Size;
 };
 
-
 // SHADERS
 // --- shdr ---
 struct ShaderHeader
 {
-	uint64_t Padding;
+	uint32_t NameIndex;
+	uint32_t NameOffset;
 	uint64_t DataSize;
 	uint64_t Padding2;
 
@@ -1270,9 +1207,12 @@ struct RShaderImage
 
 // --- shds ---
 struct ShaderSetHeader {
-	uint8_t Unknown1[0x18];
+	uint64_t VTablePadding;
+	uint32_t NameIndex;
+	uint32_t NameOffset;
+	uint8_t Unknown1[0x8];
 	uint16_t Count1;
-	uint16_t Count2;
+	uint16_t TextureInputCount;
 	uint16_t Count3;
 	uint8_t Byte1;
 	uint8_t Byte2;
@@ -1285,7 +1225,28 @@ struct ShaderSetHeader {
 	// only used for version 12+
 	uint64_t VertexShaderHash;
 	uint64_t PixelShaderHash;
+	uint64_t PixelShaderHashTF;
+
 };
+
+struct ShaderSetHeaderTF {
+	uint64_t VTablePadding;
+	uint32_t NameIndex;
+	uint32_t NameOffset;
+	uint8_t Unknown1[0x8];
+	uint16_t Count1;
+	uint16_t TextureInputCount;
+	uint16_t Count3;
+	uint8_t Byte1;
+	uint8_t Byte2;
+
+	uint8_t Unknown2[0x28];
+
+	// only used for version 12+
+	uint64_t VertexShaderHash;
+	uint64_t PixelShaderHash;
+};
+
 
 struct ShaderDataHeader
 {
@@ -1379,6 +1340,7 @@ struct ShaderVar
 {
 	string Name;
 	D3D_SHADER_VARIABLE_TYPE Type;
+	int Size;
 };
 
 struct ShaderResBinding
@@ -1440,7 +1402,7 @@ struct UIAtlasImage // uiai wen
 {
 	string Path;
 	uint32_t Hash;
-	uint64_t PathTableOffset;
+	uint32_t PathTableOffset;
 
 	UIAtlasOffset offsets; // idk anymore
 	UIAtlasUV uvs;
@@ -1452,11 +1414,137 @@ struct UIAtlasImage // uiai wen
 	uint16_t PosY;
 };
 
+// --- efct ---
+struct EffectHeaderV3
+{
+	RPakPtr effectData;
+	RPakPtr unk2;
+};
+
+// --- efct ---
+struct EffectHeaderV10
+{
+	RPakPtr effectData;
+	RPakPtr unk2;
+};
+
+struct EffectDataV3
+{
+	RPakPtr pcf;
+	RPakPtr effectName; // Double ptr to effect name
+	RPakPtr unk2;
+	RPakPtr particleSystemOperator; // Double ptr to pso name
+	RPakPtr unk3;
+	RPakPtr unk4;
+};
+
+struct EffectDataV10
+{
+	RPakPtr effectName;
+	char pad_0008[40];
+	RPakPtr effectPath;
+};
+
+// --- rson ---
+#define RSON_STRING 0x2
+#define RSON_OBJECT 0x8
+#define RSON_BOOLEAN 0x10
+#define RSON_INTEGER 0x20
+#define RSON_ARRAY 0x1000
+
+struct RSONHeader
+{
+	int type;
+	int nodeCount;
+	RPakPtr pNodes;
+};
+
+struct RSONNode
+{
+	RPakPtr pName;
+	int type;
+	int valueCount;
+	RPakPtr pValues;
+};
+
+
+enum class RuiArgumentType_t : uint8_t
+{
+	TYPE_NONE = 0,
+	TYPE_STRING = 0x1,
+	TYPE_ASSET = 0x2,
+	TYPE_BOOL = 0x3,
+	TYPE_INT = 0x4,
+	TYPE_FLOAT = 0x5,
+	TYPE_FLOAT2 = 0x6,
+	TYPE_FLOAT3 = 0x7,
+	TYPE_COLOR_ALPHA = 0x8,
+	TYPE_GAMETIME = 0x9,
+	TYPE_WALLTIME = 0xA,
+	TYPE_UIHANDLE = 0xB,
+	TYPE_IMAGE = 0xC,
+	TYPE_FONT_FACE = 0xD,
+	TYPE_FONT_HASH = 0xE,
+	TYPE_ARRAY = 0xF,
+};
+
+static const char* s_RuiArgTypes[] = {
+	"none",
+	"string",
+	"asset",
+	"bool",
+	"int",
+	"float",
+	"float2",
+	"float3",
+	"color_alpha",
+	"gametime",
+	"walltime",
+	"uihandle",
+	"image",
+	"font_face",
+	"font_hash",
+	"array"
+};
+
+struct RUIHeader
+{
+	RPakPtr name;
+	RPakPtr values;
+	RPakPtr unk2;
+	float elementWidth;
+	float elementHeight;
+	float UnkFloat3; // 1 / width
+	float UnkFloat4; // 1 / height
+	RPakPtr argNames;
+	RPakPtr argClusters;
+	RPakPtr args;
+	short argCount; // number of slots for arguments. not all are used
+	short unk3;
+	uint32_t unk4;
+	uint16_t unk5;
+	uint16_t unk6;
+	uint16_t unk7;
+	uint16_t argClusterCount;
+	RPakPtr unk8;
+	RPakPtr unk9;
+	RPakPtr unk10;
+};
+
+struct RuiArg
+{
+	RuiArgumentType_t type;
+	char unk1;
+	short valueOffset;
+	short nameOffset;
+	short shortHash;
+};
+
 #pragma pack(pop)
+
 
 // Validate all game structures
 // APEX
-ASSERT_SIZE(TextureHeader, 0x38);
 ASSERT_SIZE(DataTableHeader, 0x28);
 ASSERT_SIZE(DataTableColumn, 0x18);
 ASSERT_SIZE(SubtitleHeader, 0x18);
@@ -1465,59 +1553,11 @@ ASSERT_SIZE(PatchHeader, 0x18);
 ASSERT_SIZE(UIIAHeader, 0x40);
 ASSERT_SIZE(SettingsKeyValue, 0x8);
 ASSERT_SIZE(SettingsKeyValuePair, 0x10);
-ASSERT_SIZE(ModelHeaderS68, 0x68);
-ASSERT_SIZE(ModelHeaderS80, 0x80);
-ASSERT_SIZE(AnimHeader, 0x30);
-ASSERT_SIZE(AnimRigHeader, 0x28);
-ASSERT_SIZE(RMdlBone, 0xB4);
-ASSERT_SIZE(RMdlMeshStreamHeader, 0x24);
-ASSERT_SIZE(RMdlMeshHeader, 0x40);
-ASSERT_SIZE(RMdlFixup, 0xC);
-ASSERT_SIZE(RMdlVertex, 0x30);
-ASSERT_SIZE(RMdlBodyPart, 0x8);
-ASSERT_SIZE(RMdlModel, 0x8);
-ASSERT_SIZE(RMdlLod, 0xC);
-ASSERT_SIZE(RMdlSubmesh, 0x9);
-ASSERT_SIZE(RMdlStripGroup, 0x19);
-ASSERT_SIZE(RMdlStripVert, 0x9);
-ASSERT_SIZE(RMdlStrip, 0x1B);
-ASSERT_SIZE(RMdlExtendedWeight, 0x4);
-ASSERT_SIZE(RMdlTexture, 0xC);
-ASSERT_SIZE(RAnimHeader, 0x40);
-
-// Game helper structs
-struct RMdlFixupPatches
-{
-	List<RMdlTexture>* Materials;
-	List<RMdlLodSubmesh>* SubmeshLods;
-	List<uint8_t>* BoneRemaps;
-	string MaterialPath;
-
-	uint64_t VertexShift;
-	uint64_t FixupTableOffset;
-	uint64_t WeightsTableOffset;
-};
-
-struct RMdlMaterial
-{
-	string MaterialName;
-
-	string AlbedoMapName;
-	string NormalMapName;
-	string GlossMapName;
-	string SpecularMapName;
-	string EmissiveMapName;
-	string AmbientOcclusionMapName;
-	string CavityMapName;
-
-	uint64_t AlbedoHash;
-	uint64_t NormalHash;
-	uint64_t GlossHash;
-	uint64_t SpecularHash;
-	uint64_t EmissiveHash;
-	uint64_t AmbientOcclusionHash;
-	uint64_t CavityHash;
-};
+ASSERT_SIZE(ModelHeaderV12_1, 0x68);
+ASSERT_SIZE(ModelHeaderV13, 0x80);
+ASSERT_SIZE(ASeqHeader, 0x30);
+//ASSERT_SIZE(AnimRigHeader, 0x28);
+ASSERT_SIZE(mstudioseqdesc_t, 0xD0);
 
 struct RUIImageTile
 {

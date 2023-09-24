@@ -265,6 +265,16 @@ namespace Assets
 				break;
 			case SaveFileType::Png:
 				Wc = DirectX::GetWICCodec(DirectX::WICCodecs::WIC_CODEC_PNG);
+				PropertyWriter = [](IPropertyBag2* props)
+				{
+					PROPBAG2 options{};
+					VARIANT varValues{};
+					options.pstrName = (LPOLESTR)L"FilterOption";
+					varValues.vt = VT_UI1;
+					varValues.bVal = WICPngFilterOption::WICPngFilterUp;
+
+					(void)props->Write(1, &options, &varValues);
+				};
 				break;
 			case SaveFileType::Tiff:
 				Wc = DirectX::GetWICCodec(DirectX::WICCodecs::WIC_CODEC_TIFF);
@@ -513,7 +523,12 @@ namespace Assets
 		case SaveFileType::Jxr:
 		case SaveFileType::Tga:
 			if (!IsValid32bppFormat(InternalScratchImage->GetMetadata().format))
-				this->ConvertToFormat(DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM);
+			{
+				if (DirectX::IsSRGB(InternalScratchImage->GetMetadata().format))
+					this->ConvertToFormat(DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+				else
+					this->ConvertToFormat(DXGI_FORMAT::DXGI_FORMAT_B8G8R8A8_UNORM);
+			}
 			break;
 			// This format requires either R32G32B32A32_FLOAT or R32G32B32_FLOAT
 		case SaveFileType::Hdr:
